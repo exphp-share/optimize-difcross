@@ -224,70 +224,21 @@ def readWavecar3(infile):
         * p2_dict contains all k-points, while p3_dict contains symmetrically
         distinct k-points
     """
-    # for each k3x, k3y pair, store one dictionary for each k3z
-    #     need to prepare dictionary structure beforehand since k's are read
-    #     off from one long unordered list
-    p3_dict = {} # p3_dict[nkpts][(kx, ky)] = ({k3z: [4]}, p3x, p3y)
-    for i in range(400):
-        p3_dict[i] = {}
-        for j in range(-60, 61):  # 20 Å with 600 eV maxed at 33 waves
-            for k in range(-60, 61):  # j and k are recip. lat. coords
-                p3_dict[i][(j, k)] = [{}]  # [{k3z: p3_ar}, p3x, p3y]
-                # so that p3x, p3y are stored once
+    # format is identical to WAVECAR2
+    p2_dict = readWavecar2(infile)
 
-    # record all momenta listed in WAVECAR
-    print('storing all outgoing plane waves')
-    with open(infile) as f:
-
-        spin = int(f.readline().strip())
-        nkpts = int(f.readline().strip())
-
-        for _ in range(4):
-            f.readline()
-
-        rCell = []
-        for _ in range(3):
-            rCell.append([float(val) for val in f.readline().split()])
-        rCell = array(rCell) * invÅtoEV  # multiply here instead of in loop
-        bz = norm(rCell[2])
-        f.readline()
-
-        crystalP_ar = zeros(3)  # assume first k-point is gamma
-        for i in range(nkpts):
-            nwaves = int(f.readline().split()[-1])
-            print('\tstoring %s waves at k-point %s: %s'
-                  % (nwaves, i, crystalP_ar / invÅtoEV))
-            f.readline()
-
-            # store each p3 in each k3z_dict
-            for j in range(nwaves):
-                # MUST ACCTOUNT for crystal momentum!
-                k_ar = array([int(val) for val in f.readline().split()[:3]])
-                p_ar = dot(k_ar, rCell) + crystalP_ar
-                px, py, pz = p_ar
-                E = (sum([comp ** 2 for comp in p_ar]) + m ** 2) ** .5
-                p_ar = insert(p_ar, 0, E)  # make p_ar a 4-vector
-
-                # store material momentum
-                kx, ky, kz = k_ar
-                k3z_list = p3_dict[i][(kx, ky)]
-                k3z_list[0][kz] = (E, pz)
-                if len(k3z_list) == 1:
-                    p3_dict[i][(kx, ky)] += [px, py]
-
-            for line in f:
-                if '.' in line[:5]:
-                    kpt = array([float(val) for val in line.split()])
-                    crystalP_ar = dot(kpt, rCell)
-                    break
-
-    # Delete empty dictionaries
-    for i in list(p3_dict):
-        for k in list(p3_dict[i]):
-            if len(p3_dict[i][k]) == 1:
-                del p3_dict[i][k]
-        if i not in range(nkpts):
-            del p3_dict[i]
+    # group values by (kx, ky)
+    p3_dict = {}
+    for i in p2_dict:
+        p3_i_dict = {}
+        for (kx, ky, kz), (E, px, py, pz) in p2_dict[i].items():
+            if (kx, ky) not in p3_i_dict:
+                p3_i_dict[(kx, ky)] = [{kz: (E, pz)}, px, py]
+            else:
+                assert abs(p3_i_dict[(kx, ky)][1] - px) < 1e-7, (p3_i_dict[(kx, ky)][1], px)
+                assert abs(p3_i_dict[(kx, ky)][2] - py) < 1e-7, (p3_i_dict[(kx, ky)][2], py)
+                p3_i_dict[(kx, ky)][0][kz] = (E, pz)
+        p3_dict[i] = p3_i_dict
 
     return p3_dict
 
